@@ -1,31 +1,32 @@
-# Ollama zeropoint app
+# Plex zeropoint module
 
-This module defines the Ollama app for zeropoint os using Terraform and the Docker provider.
+This Terraform module deploys a Plex Media Server container using the Docker provider and the Zeropoint OS module pattern.
 
 ## Resources Created
 
-- **Docker Image**: Builds from local `Dockerfile` with platform-specific targeting
-- **Docker Container**: Ollama server with optional GPU support
+- **Docker Image**: Pulls the official `plexinc/pms-docker:latest` image
+- **Docker Container**: Plex server with optional hardware transcoding support
 
 ## Requirements
 
 - Terraform >= 1.0
 - Docker provider ~> 3.0
-- GPU support (optional):
+- Host GPU/driver support for hardware transcoding (optional):
   - NVIDIA: NVIDIA Container Runtime
-  - AMD: ROCm drivers
-  - Intel: Intel GPU drivers
+  - Intel/AMD: VAAPI (`/dev/dri`) support
 
 ## Usage
 
 ### Via zeropoint API
 
+Example install payload (replace `source` with your module location):
+
 ```bash
 curl -X POST http://<zeropoint-node-name>:2370/modules/install \
   -H "Content-Type: application/json" \
   -d '{
-    "source": "https://github.com/zeropoint-os/ollama.git", 
-    "module_id": "ollama",
+    "source": "https://your-repo/plex-module.git", 
+    "module_id": "plex",
     "arch": "arm64",
     "gpu_vendor": "nvidia"
   }'
@@ -33,55 +34,65 @@ curl -X POST http://<zeropoint-node-name>:2370/modules/install \
 
 ### Manual (for testing)
 
-Use Run task (Shift+Alt+T)
-1. Full test - setup and apply
-2. Full test - cleanup
+Use the included VS Code run tasks or run the sequence below:
 
-The install will be performed using Docker-in-Docker.
+```bash
+docker network create zpm-test-nw || echo 'Network already exists'
+terraform init
+terraform validate
+terraform plan -var='zp_network_name=zpm-test-nw' -var='zp_module_storage=/workspaces/data' -out=tfplan
+terraform apply -var='zp_network_name=zpm-test-nw' -var='zp_module_storage=/workspaces/data' -auto-approve
+```
+
+Then run the test script:
+
+```bash
+bash plex-test.sh
+```
 
 ## Inputs
 
 | Name | Type | Description | Default |
 |------|------|-------------|---------|
-| `zp_app_id` | string | Unique identifier for this app instance (injected by zeropoint) | `"ollama"` |
+| `zp_module_id` | string | Unique identifier for this module instance (injected by zeropoint) | `"plex"` |
 | `zp_network_name` | string | Pre-created Docker network name (injected by zeropoint) | (required) |
 | `zp_arch` | string | Target architecture: amd64, arm64, etc. (injected by zeropoint) | `"amd64"` |
 | `zp_gpu_vendor` | string | GPU vendor: nvidia, amd, intel, or empty for no GPU (injected by zeropoint) | `""` |
 | `zp_module_storage` | string | Host path for persistent storage (injected by zeropoint) | (required) |
+| `plex_claim` | string | Optional Plex claim token to register the server | `""` |
+| `tz` | string | Timezone for the container | `"UTC"` |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `main` | Main Ollama container resource (docker_container) |
+| `main` | Main Plex container resource (`docker_container`) |
+| `plex_api_url` | URL for the Plex web UI accessible via Docker network |
 
-## GPU Support
+## GPU / Hardware Transcoding
 
-This module supports multiple GPU vendors:
+- **NVIDIA**: Module sets `runtime = "nvidia"` and `gpus = "all"` if `zp_gpu_vendor` is `nvidia`.
+- **Intel/AMD (VAAPI)**: Module will map `/dev/dri` into the container when `zp_gpu_vendor` is non-empty and not `nvidia`.
+- **No GPU**: Hardware options are left unset (CPU-only mode).
 
-- **NVIDIA**: Sets `runtime = "nvidia"` and `gpus = "all"`
-- **AMD/Intel**: Sets `gpus = "all"` (uses default runtime with device access)
-- **No GPU**: Both runtime and gpus set to null (CPU-only mode)
-
-The GPU vendor is auto-detected by zeropoint and injected via the `gpu_vendor` variable.
+The host must have drivers installed and device nodes available; the module only maps devices and requests runtimes.
 
 ## Network & Service Discovery
 
-- **Internal Port**: 11434 (Ollama API)
-- **Network**: Uses pre-created network provided by zeropoint via `zp_network_name`
-- **No Host Ports**: Service discovery via DNS only
-- **Container Name**: `${zp_module_id}-main` (e.g., `ollama-main`)
+- **Internal Port**: 32400 (Plex web UI/API)
+- **Network**: Uses pre-created network provided by Zeropoint via `zp_network_name`
+- **No Host Ports**: Service discovery is expected via Docker DNS; external exposure should be created through Zeropoint.
 
-## Accessing Ollama
+## Accessing Plex
 
 ### From Other Containers (Service Discovery)
 
-Other apps linked to Ollama can access it via DNS:
+Other containers on the same Docker network can reach Plex at:
 
 ```bash
-curl http://ollama-main:11434/api/tags
+curl http://plex-main:32400
 ```
 
 ### From Host (via Exposure)
 
-External access requires creating an exposure through zeropoint API.
+External access requires creating an exposure through Zeropoint API or binding ports on the host (not recommended here).

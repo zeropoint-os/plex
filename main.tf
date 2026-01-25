@@ -9,7 +9,7 @@ terraform {
 
 variable "zp_module_id" {
   type        = string
-  default     = "ollama"
+  default     = "plex"
   description = "Unique identifier for this module instance (user-defined, freeform)"
 }
 
@@ -35,21 +35,28 @@ variable "zp_module_storage" {
   description = "Host path for persistent storage (injected by zeropoint)"
 }
 
-# Build Ollama image from local Dockerfile
-resource "docker_image" "ollama" {
-  name = "${var.zp_module_id}:latest"
-  build {
-    context    = path.module
-    dockerfile = "Dockerfile"
-    platform   = "linux/${var.zp_arch}"  # Uses injected zp_arch variable
-  }
+variable "plex_claim" {
+  type        = string
+  default     = ""
+  description = "Optional Plex claim token to register the server"
+}
+
+variable "tz" {
+  type        = string
+  default     = "UTC"
+  description = "Timezone for the container"
+}
+
+# Use official Plex image (pulled from registry)
+resource "docker_image" "plex" {
+  name         = "plexinc/pms-docker:latest"
   keep_locally = true
 }
 
-# Main Ollama container (no host port binding)
-resource "docker_container" "ollama_main" {
+# Main Plex container (no host port binding)
+resource "docker_container" "plex_main" {
   name  = "${var.zp_module_id}-main"
-  image = docker_image.ollama.image_id
+  image = docker_image.plex.image_id
 
   # Network configuration (provided by zeropoint)
   networks_advanced {
@@ -59,47 +66,74 @@ resource "docker_container" "ollama_main" {
   # Restart policy
   restart = "unless-stopped"
 
-  # GPU access (conditional based on vendor)
+  # GPU access (NVIDIA uses runtime; others may need /dev/dri)
   runtime = var.zp_gpu_vendor == "nvidia" ? "nvidia" : null
   gpus    = var.zp_gpu_vendor != "" ? "all" : null
 
-  # Environment variables
+  # Environment variables (PLEX_CLAIM optional)
   env = [
-    "OLLAMA_HOST=0.0.0.0",
+    "PLEX_CLAIM=${var.plex_claim}",
+    "TZ=${var.tz}",
   ]
 
-  # Persistent storage
+  # Persistent storage for Plex
   volumes {
-    host_path      = "${var.zp_module_storage}/.ollama"
-    container_path = "/root/.ollama"
+    host_path      = "${var.zp_module_storage}/config"
+    container_path = "/config"
+  }
+  volumes {
+    host_path      = "${var.zp_module_storage}/transcode"
+    container_path = "/transcode"
+  }
+  volumes {
+    host_path      = "${var.zp_module_storage}/media"
+    container_path = "/data"
   }
 
-  # Ports exposed internally (no host binding)
-  # Port 11434 is accessible via service discovery (DNS)
+  # Conditional device mapping for VAAPI (Intel/AMD)
+  dynamic "devices" {
+    for_each = var.zp_gpu_vendor != "" && var.zp_gpu_vendor != "nvidia" ? [1] : []
+    content {
+      host_path      = "/dev/dri"
+      container_path = "/dev/dri"
+      permissions    = "rwm"
+    }
+  }
+
+  # No host port bindings; service discovery via Docker network
 }
 
 # Outputs for zeropoint (container resource only)
+# Outputs for zeropoint (container resource only)
 output "main" {
-  value       = docker_container.ollama_main
-  description = "Main Ollama container"
+  value       = docker_container.plex_main
+  description = "Main Plex container"
 }
 
 # Service ports for external access (defined but not bound to host)
+# Service ports for external access (defined but not bound to host)
 output "main_ports" {
   value = {
-    api = {
-      port        = 11434                   # Ollama API port
-      protocol    = "http"                  # The protocol used
-      transport   = "tcp"                   # Transport layer
-      description = "Ollama API endpoint"   # Description of the port
-      default     = true                    # Default port for the service
+    web = {
+      port        = 32400
+      protocol    = "http"
+      transport   = "tcp"
+      description = "Plex Web UI/API"
+      default     = true
+    }
+    dlna = {
+      port        = 1900
+      protocol    = "udp"
+      transport   = "udp"
+      description = "DLNA/UPnP discovery (optional)"
+      default     = false
     }
   }
   description = "Service ports for external access"
 }
 
-# Ollama API URL for easy consumption by other modules
-output "ollama_api_url" {
-  value       = "http://${docker_container.ollama_main.name}:11434"
-  description = "Ollama API URL accessible via Docker network"
+# Plex API URL for easy consumption by other modules
+output "plex_api_url" {
+  value       = "http://${docker_container.plex_main.name}:32400"
+  description = "Plex API URL accessible via Docker network"
 }

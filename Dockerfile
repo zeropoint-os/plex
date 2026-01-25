@@ -1,7 +1,7 @@
-FROM ollama/ollama:latest
+FROM plexinc/pms-docker:latest
 
-# Expose the default Ollama port
-EXPOSE 11434
+# Expose the default Plex port
+EXPOSE 32400
 
-# Set the default command to run Ollama server
-CMD ["serve"]
+# Use upstream image's startup; this file is present so local builds can be created if desired
+CMD ["/init"]
