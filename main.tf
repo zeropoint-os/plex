@@ -121,13 +121,6 @@ output "main_ports" {
       description = "Plex Web UI/API"
       default     = true
     }
-    dlna = {
-      port        = 1900
-      protocol    = "udp"
-      transport   = "udp"
-      description = "DLNA/UPnP discovery (optional)"
-      default     = false
-    }
   }
   description = "Service ports for external access"
 }
