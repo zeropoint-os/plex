@@ -30,9 +30,14 @@ variable "zp_gpu_vendor" {
   description = "GPU vendor - nvidia, amd, intel, or empty for no GPU (injected by zeropoint)"
 }
 
-variable "zp_module_storage" {
+variable "zp_module_dir" {
   type        = string
-  description = "Host path for persistent storage (injected by zeropoint)"
+  description = "Agent's working directory for this module (injected by zeropoint). Terraform state and the cloned source live here. Users may edit this — the agent moves the directory atomically."
+}
+
+variable "zp_storage_dir" {
+  type        = string
+  description = "Isolated data root for this module (injected by zeropoint). All bind mounts MUST be under this path so the agent can move user data when zp_storage_dir is edited (atomic same-fs, rsync-and-swap cross-fs)."
 }
 
 variable "plex_claim" {
@@ -78,15 +83,15 @@ resource "docker_container" "plex_main" {
 
   # Persistent storage for Plex
   volumes {
-    host_path      = "${var.zp_module_storage}/config"
+    host_path      = "${var.zp_storage_dir}/config"
     container_path = "/config"
   }
   volumes {
-    host_path      = "${var.zp_module_storage}/transcode"
+    host_path      = "${var.zp_storage_dir}/transcode"
     container_path = "/transcode"
   }
   volumes {
-    host_path      = "${var.zp_module_storage}/media"
+    host_path      = "${var.zp_storage_dir}/media"
     container_path = "/data"
   }
 

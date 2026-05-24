@@ -40,8 +40,8 @@ Use the included VS Code run tasks or run the sequence below:
 docker network create zpm-test-nw || echo 'Network already exists'
 terraform init
 terraform validate
-terraform plan -var='zp_network_name=zpm-test-nw' -var='zp_module_storage=/workspaces/data' -out=tfplan
-terraform apply -var='zp_network_name=zpm-test-nw' -var='zp_module_storage=/workspaces/data' -auto-approve
+terraform plan -var='zp_network_name=zpm-test-nw' -var='zp_storage_dir=/workspaces/data' -out=tfplan
+terraform apply -var='zp_network_name=zpm-test-nw' -var='zp_storage_dir=/workspaces/data' -auto-approve
 ```
 
 Then run the test script:
@@ -58,7 +58,8 @@ bash plex-test.sh
 | `zp_network_name` | string | Pre-created Docker network name (injected by zeropoint) | (required) |
 | `zp_arch` | string | Target architecture: amd64, arm64, etc. (injected by zeropoint) | `"amd64"` |
 | `zp_gpu_vendor` | string | GPU vendor: nvidia, amd, intel, or empty for no GPU (injected by zeropoint) | `""` |
-| `zp_module_storage` | string | Host path for persistent storage (injected by zeropoint) | (required) |
+| `zp_module_dir` | string | Agent's working directory for this module — terraform state + cloned source (injected by zeropoint) | (required) |
+| `zp_storage_dir` | string | Isolated data root for this module — all bind mounts must live under here (injected by zeropoint) | (required) |
 | `plex_claim` | string | Optional Plex claim token to register the server | `""` |
 | `tz` | string | Timezone for the container | `"UTC"` |
 
